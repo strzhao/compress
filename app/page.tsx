@@ -33,14 +33,14 @@ export default function HomePage() {
       </div>
       <div className="flex flex-col items-center justify-center min-h-screen p-4 sm:p-6 md:p-8">
         {/* 标题区域 */}
-        <div className="text-center mb-12 md:mb-16">
+        <header className="text-center mb-12 md:mb-16">
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-gray-900 dark:text-gray-100">
-            一个工具集
+            在线工具集合 - 安全高效的数字解决方案
           </h1>
           <p className="mt-4 max-w-2xl mx-auto text-lg sm:text-xl text-gray-600 dark:text-gray-400">
-            为您的日常数字任务提供安全、高效的解决方案。
+            为您的日常数字任务提供安全、高效的解决方案。所有工具均在本地运行，保护您的隐私安全。
           </p>
-        </div>
+        </header>
 
         {/* 工具网格 */}
         <div className="w-full max-w-5xl mx-auto">
