@@ -114,6 +114,8 @@ export default function ImageCompressorPage() {
   const [totalFiles, setTotalFiles] = useState(0);
   const [displayProgress, setDisplayProgress] = useState(0);
   const [currentProcessingFile, setCurrentProcessingFile] = useState<string | null>(null);
+  const [isSliderDragging, setIsSliderDragging] = useState(false);
+  const [shouldTriggerCompression, setShouldTriggerCompression] = useState(true);
 
 
   const runFakeProgress = (duration: number, baseProgress: number, progressShare: number, progressCallback: (p: number) => void) => {
@@ -150,32 +152,45 @@ export default function ImageCompressorPage() {
     });
   };
 
-  const processFiles = useCallback(async (files: File[], level: CompressionLevel) => {
+  const processFiles = useCallback(async (files: File[], level: CompressionLevel, currentCustomRatio?: number) => {
     setIsCompressing(true);
     setProcessedFiles(0);
     setTotalFiles(files.length);
     setDisplayProgress(0);
 
-    const getOptions = (level: CompressionLevel) => {
+    const getOptions = (level: CompressionLevel, customRatio?: number) => {
         switch (level) {
             case "small":
                 return { maxSizeMB: 0.5, initialQuality: 0.6 };
             case "high":
                 return { maxSizeMB: 2, initialQuality: 0.95 };
             case "custom":
-                return { maxSizeMB: 2, initialQuality: customCompressionRatio / 100 };
+                return { maxSizeMB: 2, initialQuality: (customRatio || customCompressionRatio) / 100 };
             case "recommended":
             default:
                 return { maxSizeMB: 1, initialQuality: 0.8 };
         }
     }
 
-    const options = { ...getOptions(level), useWebWorker: true };
+    const options = { ...getOptions(level, currentCustomRatio), useWebWorker: true };
+
+    // 打印压缩参数到控制台
+    console.log('📸 图片压缩参数:');
+    console.log('  压缩级别:', level);
+    console.log('  自定义质量:', currentCustomRatio || customCompressionRatio, '%');
+    console.log('  最终参数:', options);
+    console.log('  文件数量:', files.length);
+    console.log('---');
 
     const newResults: CompressedFileResult[] = [];
     for (const [index, file] of files.entries()) {
         if (!file.type.startsWith('image/')) continue;
         try {
+            console.log(`🔄 开始压缩文件 ${index + 1}: ${file.name}`);
+            console.log(`   文件类型: ${file.type}`);
+            console.log(`   文件大小: ${formatBytes(file.size)}`);
+            console.log(`   使用参数:`, options);
+
             let compressedFile: Blob;
             if (file.type === 'image/gif') {
                 setCurrentProcessingFile(file.name);
@@ -191,8 +206,12 @@ export default function ImageCompressorPage() {
                 setCurrentProcessingFile(null);
             } else {
                 compressedFile = await imageCompression(file, options);
+                console.log(`✅ 普通图片压缩完成: ${file.name}`);
+                console.log(`   压缩前: ${formatBytes(file.size)}`);
+                console.log(`   压缩后: ${formatBytes(compressedFile.size)}`);
+                console.log(`   压缩率: ${Math.round(100 - (compressedFile.size / file.size) * 100)}%`);
             }
-            
+
             newResults.push({
                 originalFile: file,
                 compressedFile,
@@ -209,6 +228,19 @@ export default function ImageCompressorPage() {
     
     setCompressedResults(prevResults => {
         prevResults.forEach(r => URL.revokeObjectURL(r.previewUrl));
+
+        // 打印压缩结果统计
+        console.log('✅ 压缩完成:');
+        console.log('  成功压缩文件数:', newResults.length);
+        newResults.forEach((result, index) => {
+          const compressionRate = Math.round(100 - (result.compressedSize / result.originalSize) * 100);
+          console.log(`  文件 ${index + 1}: ${result.originalFile.name}`);
+          console.log(`    原大小: ${formatBytes(result.originalSize)}`);
+          console.log(`    压缩后: ${formatBytes(result.compressedSize)}`);
+          console.log(`    压缩率: ${compressionRate}%`);
+        });
+        console.log('---');
+
         return newResults;
     });
     setIsCompressing(false);
@@ -216,10 +248,10 @@ export default function ImageCompressorPage() {
   }, []);
 
   useEffect(() => {
-    if (sourceFiles.length > 0) {
-        processFiles(sourceFiles, compressionLevel);
+    if (sourceFiles.length > 0 && shouldTriggerCompression && !isSliderDragging) {
+        processFiles(sourceFiles, compressionLevel, compressionLevel === "custom" ? customCompressionRatio : undefined);
     }
-  }, [sourceFiles, compressionLevel, processFiles, customCompressionRatio]);
+  }, [sourceFiles, compressionLevel, processFiles, customCompressionRatio, shouldTriggerCompression, isSliderDragging]);
 
   const handleFileSelect = (files: FileList | null) => {
     if (files) {
@@ -229,7 +261,15 @@ export default function ImageCompressorPage() {
 
   const handleCompressionLevelChange = (value: CompressionLevel) => {
     if (value) {
+      const isSwitchingToCustom = value === "custom" && compressionLevel !== "custom";
+
+      // Prevent compression when first switching to custom mode
+      if (isSwitchingToCustom) {
+        setShouldTriggerCompression(false);
+      }
+
       setCompressionLevel(value);
+
       // Update slider position based on selected level
       switch (value) {
         case "small":
@@ -244,6 +284,11 @@ export default function ImageCompressorPage() {
         case "custom":
           // Keep current custom value
           break;
+      }
+
+      // Re-enable compression for non-custom changes
+      if (!isSwitchingToCustom) {
+        setShouldTriggerCompression(true);
       }
     }
   };
@@ -315,13 +360,42 @@ export default function ImageCompressorPage() {
                     <span className="text-sm font-medium text-gray-700 whitespace-nowrap">质量: {customCompressionRatio}%</span>
                     <Slider
                       value={[customCompressionRatio]}
-                      onValueChange={(value) => setCustomCompressionRatio(value[0])}
+                      onValueChange={(value) => {
+                        setCustomCompressionRatio(value[0]);
+                        // Enable compression when slider value changes
+                        setShouldTriggerCompression(true);
+                      }}
+                      onValueCommit={() => {
+                        // Trigger compression when slider dragging ends
+                        setIsSliderDragging(false);
+                      }}
+                      onPointerDown={() => {
+                        // Disable compression while dragging
+                        setIsSliderDragging(true);
+                        setShouldTriggerCompression(false);
+                      }}
                       max={100}
                       min={10}
                       step={1}
                       className="flex-1"
                     />
                   </div>
+                )}
+                {compressionLevel === "custom" && (
+                  <Button
+                    onClick={() => {
+                      setShouldTriggerCompression(true);
+                      setIsSliderDragging(false);
+                      // Manually trigger compression with current custom ratio
+                      if (sourceFiles.length > 0) {
+                        processFiles(sourceFiles, compressionLevel, customCompressionRatio);
+                      }
+                    }}
+                    disabled={isCompressing}
+                    variant="outline"
+                  >
+                    应用压缩
+                  </Button>
                 )}
                 <Button onClick={handleClear} variant="outline" disabled={isCompressing}>清空</Button>
                 <Button onClick={handleDownloadAll} disabled={isZipping || isCompressing}>
