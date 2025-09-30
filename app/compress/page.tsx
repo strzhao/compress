@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Slider } from "@/components/ui/slider";
 
 // --- Helper Icons ---
 const UploadCloudIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -31,7 +32,7 @@ const DownloadIcon = (props: React.SVGProps<SVGSVGElement>) => (
 );
 
 // --- Types ---
-type CompressionLevel = "small" | "recommended" | "high";
+type CompressionLevel = "small" | "recommended" | "high" | "custom";
 
 interface CompressedFileResult {
   originalFile: File;
@@ -51,11 +52,12 @@ const formatBytes = (bytes: number, decimals = 2) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
 };
 
-const compressGif = async (file: File, level: CompressionLevel): Promise<Blob> => {
+const compressGif = async (file: File, level: CompressionLevel, customRatio?: number): Promise<Blob> => {
     const optimizationLevels = {
         small: '-O3 --lossy=120 --colors 64',
-        recommended: '-O3 --lossy=60 --colors 96', 
+        recommended: '-O3 --lossy=60 --colors 96',
         high: '-O2 --lossy=20 --colors 128',
+        custom: customRatio ? `-O3 --lossy=${Math.round(100 - customRatio)} --colors ${Math.round(64 + (customRatio / 100) * 64)}` : '-O3 --lossy=60 --colors 96',
     };
     try {
         console.log('Starting GIF compression with level:', level);
@@ -105,6 +107,7 @@ export default function ImageCompressorPage() {
   const [sourceFiles, setSourceFiles] = useState<File[]>([]);
   const [compressedResults, setCompressedResults] = useState<CompressedFileResult[]>([]);
   const [compressionLevel, setCompressionLevel] = useState<CompressionLevel>("recommended");
+  const [customCompressionRatio, setCustomCompressionRatio] = useState<number>(80); // 80% quality by default
   const [isCompressing, setIsCompressing] = useState(false);
   const [isZipping, setIsZipping] = useState(false);
   const [processedFiles, setProcessedFiles] = useState(0);
@@ -156,12 +159,14 @@ export default function ImageCompressorPage() {
     const getOptions = (level: CompressionLevel) => {
         switch (level) {
             case "small":
-                return { maxSizeMB: 0.5, initialQuality: 0.6, };
+                return { maxSizeMB: 0.5, initialQuality: 0.6 };
             case "high":
-                return { maxSizeMB: 2, initialQuality: 0.95, };
+                return { maxSizeMB: 2, initialQuality: 0.95 };
+            case "custom":
+                return { maxSizeMB: 2, initialQuality: customCompressionRatio / 100 };
             case "recommended":
             default:
-                return { maxSizeMB: 1, initialQuality: 0.8, };
+                return { maxSizeMB: 1, initialQuality: 0.8 };
         }
     }
 
@@ -175,13 +180,13 @@ export default function ImageCompressorPage() {
             if (file.type === 'image/gif') {
                 setCurrentProcessingFile(file.name);
                 const estimatedDuration = 1000 + (file.size / 1024 / 1024) * 4000; // 1s base + 4s per MB
-                
+
                 const progressShare = (1 / files.length) * 100;
                 const baseProgress = (index / files.length) * 100;
 
                 const progressPromise = runFakeProgress(estimatedDuration, baseProgress, progressShare, setDisplayProgress);
-                compressedFile = await compressGif(file, level);
-                await progressPromise; 
+                compressedFile = await compressGif(file, level, level === 'custom' ? customCompressionRatio : undefined);
+                await progressPromise;
 
                 setCurrentProcessingFile(null);
             } else {
@@ -214,11 +219,32 @@ export default function ImageCompressorPage() {
     if (sourceFiles.length > 0) {
         processFiles(sourceFiles, compressionLevel);
     }
-  }, [sourceFiles, compressionLevel, processFiles]);
+  }, [sourceFiles, compressionLevel, processFiles, customCompressionRatio]);
 
   const handleFileSelect = (files: FileList | null) => {
     if (files) {
       setSourceFiles(Array.from(files));
+    }
+  };
+
+  const handleCompressionLevelChange = (value: CompressionLevel) => {
+    if (value) {
+      setCompressionLevel(value);
+      // Update slider position based on selected level
+      switch (value) {
+        case "small":
+          setCustomCompressionRatio(60);
+          break;
+        case "recommended":
+          setCustomCompressionRatio(80);
+          break;
+        case "high":
+          setCustomCompressionRatio(95);
+          break;
+        case "custom":
+          // Keep current custom value
+          break;
+      }
     }
   };
 
@@ -278,11 +304,25 @@ export default function ImageCompressorPage() {
         <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
             <h2 className="text-3xl font-bold">压缩完成</h2>
             <div className="flex items-center gap-4">
-                <ToggleGroup type="single" value={compressionLevel} onValueChange={(value: CompressionLevel) => value && setCompressionLevel(value)} aria-label="Compression Level" disabled={isCompressing}>
+                <ToggleGroup type="single" value={compressionLevel} onValueChange={handleCompressionLevelChange} aria-label="Compression Level" disabled={isCompressing}>
                     <ToggleGroupItem value="small" aria-label="Smallest Size">更小体积</ToggleGroupItem>
                     <ToggleGroupItem value="recommended" aria-label="Recommended">智能推荐</ToggleGroupItem>
                     <ToggleGroupItem value="high" aria-label="Higher Quality">更高质量</ToggleGroupItem>
+                    <ToggleGroupItem value="custom" aria-label="Custom">自定义</ToggleGroupItem>
                 </ToggleGroup>
+                {compressionLevel === "custom" && (
+                  <div className="flex items-center gap-3 min-w-[240px] bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
+                    <span className="text-sm font-medium text-gray-700 whitespace-nowrap">质量: {customCompressionRatio}%</span>
+                    <Slider
+                      value={[customCompressionRatio]}
+                      onValueChange={(value) => setCustomCompressionRatio(value[0])}
+                      max={100}
+                      min={10}
+                      step={1}
+                      className="flex-1"
+                    />
+                  </div>
+                )}
                 <Button onClick={handleClear} variant="outline" disabled={isCompressing}>清空</Button>
                 <Button onClick={handleDownloadAll} disabled={isZipping || isCompressing}>
                     {isZipping ? "正在打包..." : (isCompressing ? "处理中..." : "下载全部")}
