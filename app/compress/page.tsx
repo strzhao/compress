@@ -161,14 +161,14 @@ export default function ImageCompressorPage() {
     const getOptions = (level: CompressionLevel, customRatio?: number) => {
         switch (level) {
             case "small":
-                return { maxSizeMB: 0.5, initialQuality: 0.6 };
+                return { maxSizeMB: 2, initialQuality: 0.6 };
             case "high":
-                return { maxSizeMB: 2, initialQuality: 0.95 };
+                return { maxSizeMB: 10, initialQuality: 0.95 };
             case "custom":
-                return { maxSizeMB: 2, initialQuality: (customRatio || customCompressionRatio) / 100 };
+                return { maxSizeMB: 10, initialQuality: (customRatio || customCompressionRatio) / 100 };
             case "recommended":
             default:
-                return { maxSizeMB: 1, initialQuality: 0.8 };
+                return { maxSizeMB: 5, initialQuality: 0.8 };
         }
     }
 
