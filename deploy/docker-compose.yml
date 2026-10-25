@@ -1,0 +1,24 @@
+# compress 自托管编排（VPS: 上海 43.143.124.222）
+# 部署: vps deploy compress（vps-ops 管线：local build → ssh load → compose up --no-build）
+# 纯浏览器端压缩工具：无 DB、无 env、无 cron；仅暴露给 caddy 所在网络
+
+services:
+  compress:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: compress:latest
+    container_name: compress
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3005
+      - HOSTNAME=0.0.0.0
+    expose:
+      - "3005"
+    networks:
+      - little-bee-net
+
+networks:
+  little-bee-net:
+    external: true
